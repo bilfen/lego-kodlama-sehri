@@ -1,0 +1,1654 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Bilfen Lego Kodlama Şehri 3D</title>
+  
+  <!-- Tailwind CSS & Google Font -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+  
+  <!-- 3D Kütüphaneleri & Ses -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/tone/14.8.49/Tone.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.6.0/dist/confetti.browser.min.js"></script>
+  <script src="./finish_sign_b64.js" onerror="window.FINISH_SIGN_B64 = null;"></script>
+
+  <style>
+    * {
+      box-sizing: border-box;
+      -webkit-tap-highlight-color: transparent;
+    }
+    body {
+      font-family: 'Fredoka', cursive, sans-serif;
+      user-select: none;
+      -webkit-user-select: none;
+      touch-action: manipulation;
+      overflow: hidden;
+      margin: 0;
+      padding: 0;
+      transition: background-color 0.6s ease;
+    }
+
+    .lego-bg-pattern {
+      background-color: var(--lego-bg-color, #0284c7);
+      background-image: 
+        radial-gradient(circle at 32% 32%, rgba(255, 255, 255, 0.28) 0%, rgba(255, 255, 255, 0.08) 22%, transparent 24%),
+        radial-gradient(circle at 50% 50%, rgba(0, 0, 0, 0.18) 24%, transparent 28%);
+      background-position: 0 0, 3px 4px;
+      background-size: 44px 44px;
+      transition: background-color 0.6s ease;
+    }
+
+    .lego-card-pattern {
+      background-color: #ffffff;
+      background-image: radial-gradient(rgba(2, 132, 199, 0.07) 20%, transparent 22%);
+      background-size: 24px 24px;
+    }
+
+    .lego-btn {
+      transition: all 0.14s cubic-bezier(0.34, 1.56, 0.64, 1);
+      box-shadow: 0 5px 0 rgba(0, 0, 0, 0.28), 0 6px 12px rgba(0, 0, 0, 0.18);
+      cursor: pointer;
+    }
+    .lego-btn:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 7px 0 rgba(0, 0, 0, 0.28), 0 10px 16px rgba(0, 0, 0, 0.22);
+    }
+    .lego-btn:active {
+      transform: translateY(3px);
+      box-shadow: 0 2px 0 rgba(0, 0, 0, 0.28), 0 3px 6px rgba(0, 0, 0, 0.16);
+    }
+
+    .lego-stud {
+      background: radial-gradient(circle at 35% 35%, rgba(255,255,255,0.75) 0%, rgba(255,255,255,0.15) 45%, rgba(0,0,0,0.35) 100%);
+      box-shadow: inset 0 2px 3px rgba(255,255,255,0.85), 0 3px 4px rgba(0,0,0,0.35);
+    }
+
+    @keyframes pulseStep {
+      0%, 100% { transform: scale(1); }
+      50% { transform: scale(1.14); }
+    }
+    .active-executing {
+      animation: pulseStep 0.32s infinite alternate;
+      outline: 4px solid #facc15 !important;
+      box-shadow: 0 0 20px #facc15 !important;
+      z-index: 20;
+    }
+
+    @keyframes shakeError {
+      0%, 100% { transform: translateX(0) scale(1.08); }
+      20%, 60% { transform: translateX(-5px) scale(1.08); }
+      40%, 80% { transform: translateX(5px) scale(1.08); }
+    }
+    .error-step {
+      animation: shakeError 0.45s ease-in-out;
+      background: #ef4444 !important;
+      color: #ffffff !important;
+      border-color: #991b1b !important;
+      border-width: 3px !important;
+      box-shadow: 0 0 18px rgba(239, 68, 68, 0.95) !important;
+      z-index: 30;
+    }
+
+    .step-card {
+      transition: transform 0.15s ease, border-color 0.15s ease, background-color 0.15s ease;
+      touch-action: pan-x;
+    }
+    .step-card.dragging {
+      opacity: 0.4;
+      transform: scale(0.92);
+    }
+    .step-card.drag-target {
+      outline: 3px dashed #1e40af !important;
+      transform: scale(1.08) !important;
+    }
+
+    #threeCanvas {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      z-index: 1;
+    }
+
+    #uiLayer {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      z-index: 10;
+      pointer-events: none;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      padding: 8px 10px 0 10px;
+    }
+
+    .pointer-auto {
+      pointer-events: auto;
+    }
+
+    .no-scrollbar::-webkit-scrollbar {
+      display: none;
+    }
+    .no-scrollbar {
+      -ms-overflow-style: none;
+      scrollbar-width: none;
+    }
+  </style>
+</head>
+<body id="mainBody" class="w-screen h-screen lego-bg-pattern" style="--lego-bg-color: #0284c7;">
+
+  <!-- 3D WebGL Canvas -->
+  <div id="threeCanvas"></div>
+
+  <!-- Arayüz Katmanı (UI) -->
+  <div id="uiLayer">
+
+    <!-- ÜST ÇUBUK: TAMAMEN SEMBOL VE İKON ODAKLI ÇOCUK DOSTU ARAYÜZ -->
+    <header class="w-full max-w-2xl mx-auto lego-card-pattern backdrop-blur-md rounded-3xl px-3 py-2 shadow-2xl border-4 border-yellow-400 pointer-auto space-y-1.5">
+      
+      <div class="flex items-center justify-between gap-1.5">
+        
+        <!-- Sol: Logo & Karakter -->
+        <div class="flex items-center gap-1.5 sm:gap-2">
+          <!-- Bilfen Logo İkonu -->
+          <div onclick="openStartScreen()" class="cursor-pointer hover:scale-105 transition-transform flex items-center shrink-0" title="Bilfen">
+            <svg class="h-9 sm:h-10 w-auto drop-shadow-md rounded-xl" viewBox="0 0 340 120" xmlns="http://www.w3.org/2000/svg">
+              <rect x="2" y="4" width="336" height="112" rx="24" fill="#003366" stroke="#1e40af" stroke-width="3" />
+              <circle cx="104" cy="31" r="13" fill="#ffffff" />
+              <ellipse cx="104" cy="31" rx="28" ry="6.5" fill="none" stroke="#ffffff" stroke-width="3.2" transform="rotate(-16 104 31)" />
+              <text x="170" y="74" font-family="Georgia, serif" font-weight="900" font-size="44" fill="#ffffff" text-anchor="middle" letter-spacing="7">BİLFEN</text>
+              <text x="170" y="99" font-family="'Fredoka', sans-serif" font-weight="600" font-size="14.5" fill="#e0f2fe" text-anchor="middle" letter-spacing="5.5">EĞİTİM KURUMLARI</text>
+            </svg>
+          </div>
+
+          <!-- Seçilen Öğrenci Avatarı -->
+          <div id="headerAvatar" class="w-10 h-10 sm:w-11 sm:h-11 bg-gradient-to-b from-amber-100 to-yellow-200 rounded-2xl border-2 border-amber-400 p-0.5 flex items-center justify-center shadow-inner cursor-pointer hover:scale-105 transition-transform" onclick="openStartScreen()" title="Karakter"></div>
+        </div>
+
+        <!-- Orta Sembol Göstergeleri: Bölüm | Yıldız | Parça -->
+        <div class="flex items-center gap-1 sm:gap-2">
+          <!-- Bölüm Rozeti -->
+          <div onclick="openLevelSelectModal()" class="flex items-center gap-1 bg-yellow-400 text-yellow-950 font-black px-2.5 py-1 rounded-2xl border-2 border-yellow-500 shadow-sm cursor-pointer hover:scale-105 transition-transform text-xs sm:text-sm">
+            <span>🗺️</span>
+            <span id="levelBadgeText">1 / 20</span>
+          </div>
+
+          <!-- Yıldız Sayacı -->
+          <div onclick="openLevelSelectModal()" class="flex items-center gap-1 bg-amber-100 text-amber-900 font-black px-2.5 py-1 rounded-2xl border-2 border-amber-300 shadow-sm cursor-pointer hover:scale-105 transition-transform text-xs sm:text-sm">
+            <span class="text-amber-500">⭐</span>
+            <span id="totalStarsCounter">0 / 60</span>
+          </div>
+
+          <!-- Toplanacak Parça Sembolü & Sayacı -->
+          <div class="flex items-center gap-1.5 bg-emerald-100 text-emerald-950 font-black px-2.5 py-1 rounded-2xl border-2 border-emerald-300 shadow-sm text-xs sm:text-sm" title="Toplanacak Lego">
+            <span id="levelTargetIcon" class="text-base sm:text-lg">🪵</span>
+            <span id="brickCounter">0 / 1</span>
+          </div>
+        </div>
+
+        <!-- Sağ İkon Butonları -->
+        <div class="flex items-center gap-1 sm:gap-1.5">
+          <button type="button" onclick="openLevelSelectModal()" class="bg-indigo-600 hover:bg-indigo-700 text-white p-2 rounded-2xl text-base font-black shadow-md lego-btn" title="Bölüm Haritası">
+            🗺️
+          </button>
+          <button type="button" onclick="tryOpenCityBuilder()" class="bg-amber-500 hover:bg-amber-600 text-white p-2 rounded-2xl text-base font-black shadow-md lego-btn" title="Lego Şehri">
+            🏙️
+          </button>
+          <button type="button" onclick="toggleCameraView()" class="bg-sky-500 hover:bg-sky-600 text-white p-2 rounded-2xl text-base font-black shadow-md lego-btn" title="Kamera">
+            🎥
+          </button>
+          <button type="button" onclick="openStartScreen()" class="bg-rose-500 hover:bg-rose-600 text-white p-2 rounded-2xl text-base font-black shadow-md lego-btn" title="Ana Menü">
+            🏠
+          </button>
+        </div>
+
+      </div>
+
+      <!-- Alt Satır: Sembollerle Görev Hedefi -->
+      <div class="flex items-center justify-between gap-1.5 bg-gradient-to-r from-blue-600 via-indigo-600 to-sky-600 text-white px-3 py-1 rounded-2xl text-xs sm:text-sm font-extrabold shadow-sm border-2 border-sky-300">
+        <div class="flex items-center gap-1.5 truncate">
+          <span class="text-base">🎯</span>
+          <span id="taskVisualHint" class="flex items-center gap-1 text-yellow-300 font-black text-xs sm:text-sm">
+            <span>Önce</span> <span class="bg-blue-500/80 px-1.5 py-0.5 rounded text-white">🪵</span> <span>Topla</span> ➔ <span>Sonra</span> <span class="bg-yellow-400 text-slate-900 px-1.5 py-0.5 rounded">🏁</span> <span>Ulaş!</span>
+          </span>
+        </div>
+        <div class="flex items-center gap-1 bg-slate-900/40 px-2 py-0.5 rounded-xl border border-white/20 shrink-0 text-xs text-yellow-300 font-black" id="starTargetHint">
+          <span>⭐ Hedef: 2 Adım</span>
+        </div>
+      </div>
+    </header>
+
+    <!-- 1. KODLAMA ALT PANELİ -->
+    <footer id="codingFooter" class="w-full max-w-2xl mx-auto lego-card-pattern backdrop-blur-md rounded-t-3xl p-2.5 sm:p-3.5 shadow-2xl border-t-4 border-x-4 border-yellow-400 pointer-auto space-y-2 mb-0">
+      <div>
+        <div class="flex justify-between items-center mb-1 px-1">
+          <div class="flex items-center gap-1.5">
+            <div class="w-3.5 h-3.5 rounded-full bg-emerald-500 lego-stud"></div>
+            <span class="text-xs font-black text-blue-950 uppercase tracking-wide flex items-center gap-1">
+              🧩 KOD DİZİSİ: <span id="stepCountBadge" class="bg-blue-600 text-white px-2 py-0.5 rounded-full text-[10px]">0</span>
+            </span>
+          </div>
+          <div class="flex items-center gap-1.5">
+            <button type="button" onclick="resetCurrentLevelPosition()" class="text-xs font-black text-slate-700 bg-slate-100 hover:bg-slate-200 px-2.5 py-1 rounded-xl border-2 border-slate-300 transition-colors" title="Başa Al">
+              ↺ Başa Al
+            </button>
+            <button type="button" onclick="clearCommands()" class="text-xs font-black text-rose-700 bg-rose-100 hover:bg-rose-200 px-2.5 py-1 rounded-xl border-2 border-rose-300 transition-colors" title="Temizle">
+              ✕ Temizle
+            </button>
+          </div>
+        </div>
+
+        <div id="commandTray" class="flex items-center gap-1.5 min-h-[64px] sm:min-h-[70px] p-1.5 bg-sky-50/90 rounded-2xl border-2 border-dashed border-sky-300 overflow-x-auto no-scrollbar shadow-inner">
+          <span id="emptyTrayText" class="text-xs text-slate-500 font-bold mx-auto flex items-center gap-1 text-center">
+            👇 <b>⬆️ İLERİ</b> ile yürüt, <b>↩️ ↪️ DÖNÜŞ</b> ile karakterin yönünü çevir!
+          </span>
+        </div>
+      </div>
+
+      <!-- 4 BÜYÜK VE RENKLİ YÖN BUTONU + BAŞLAT -->
+      <div class="grid grid-cols-5 gap-1.5 sm:gap-2">
+        <!-- SOLA DÖN: TURUNCU -->
+        <button type="button" onclick="addCommand('turnLeft')" class="lego-btn bg-orange-500 hover:bg-orange-600 border-b-4 border-orange-700 text-white font-black rounded-2xl py-2 flex flex-col items-center justify-center relative">
+          <div class="w-2.5 h-2.5 rounded-full bg-orange-300 lego-stud absolute top-1.5 left-1.5"></div>
+          <span class="text-2xl sm:text-3xl leading-none">↩️</span>
+          <span class="text-[10px] mt-0.5 font-black tracking-wide">SOLA DÖN</span>
+        </button>
+
+        <!-- İLERİ GİT: MAVİ -->
+        <button type="button" onclick="addCommand('forward')" class="lego-btn bg-blue-600 hover:bg-blue-700 border-b-4 border-blue-800 text-white font-black rounded-2xl py-2 flex flex-col items-center justify-center relative">
+          <div class="w-2.5 h-2.5 rounded-full bg-blue-300 lego-stud absolute top-1.5 left-1.5"></div>
+          <span class="text-2xl sm:text-3xl leading-none">⬆️</span>
+          <span class="text-[10px] mt-0.5 font-black tracking-wide">İLERİ GİT</span>
+        </button>
+
+        <!-- GERİ GİT: MOR -->
+        <button type="button" onclick="addCommand('backward')" class="lego-btn bg-purple-600 hover:bg-purple-700 border-b-4 border-purple-800 text-white font-black rounded-2xl py-2 flex flex-col items-center justify-center relative">
+          <div class="w-2.5 h-2.5 rounded-full bg-purple-300 lego-stud absolute top-1.5 left-1.5"></div>
+          <span class="text-2xl sm:text-3xl leading-none">⬇️</span>
+          <span class="text-[10px] mt-0.5 font-black tracking-wide">GERİ GİT</span>
+        </button>
+
+        <!-- SAĞA DÖN: PEMBE -->
+        <button type="button" onclick="addCommand('turnRight')" class="lego-btn bg-pink-500 hover:bg-pink-600 border-b-4 border-pink-700 text-white font-black rounded-2xl py-2 flex flex-col items-center justify-center relative">
+          <div class="w-2.5 h-2.5 rounded-full bg-pink-300 lego-stud absolute top-1.5 left-1.5"></div>
+          <span class="text-2xl sm:text-3xl leading-none">↪️</span>
+          <span class="text-[10px] mt-0.5 font-black tracking-wide">SAĞA DÖN</span>
+        </button>
+
+        <!-- ÇALIŞTIR: YEŞİL -->
+        <button type="button" id="runButton" onclick="runAlgorithm()" class="lego-btn bg-emerald-500 hover:bg-emerald-600 border-b-4 border-emerald-700 text-white font-black rounded-2xl py-2 flex flex-col items-center justify-center relative">
+          <div class="w-2.5 h-2.5 rounded-full bg-emerald-200 lego-stud absolute top-1.5 right-1.5"></div>
+          <span class="text-2xl sm:text-3xl leading-none">▶️</span>
+          <span class="text-[10px] mt-0.5 font-black tracking-wide">ÇALIŞTIR</span>
+        </button>
+      </div>
+    </footer>
+
+    <!-- 2. ETKİLEŞİMLİ MAKET BİRLEŞTİRME PANELİ -->
+    <footer id="buildModeFooter" class="hidden w-full max-w-2xl mx-auto lego-card-pattern backdrop-blur-md rounded-t-3xl p-3 shadow-2xl border-t-4 border-x-4 border-yellow-400 pointer-auto space-y-2 mb-0">
+      <div class="flex justify-between items-center px-1">
+        <div class="flex items-center gap-1.5">
+          <span class="text-xl">🔨</span>
+          <span id="buildFooterTitle" class="text-xs sm:text-sm font-black text-blue-900 uppercase tracking-wide">
+            Lego Parçalarını Birleştir!
+          </span>
+        </div>
+        <span id="buildStepBadge" class="bg-emerald-600 text-white font-black text-xs px-2.5 py-0.5 rounded-full">
+          1 / 5
+        </span>
+      </div>
+      <div id="buildPiecesTray" class="grid grid-cols-5 gap-1.5 py-1"></div>
+    </footer>
+
+    <!-- 3. FİNAL: LEGO ŞEHRİNİ İNŞA ET PANELİ -->
+    <footer id="cityBuildFooter" class="hidden w-full max-w-3xl mx-auto lego-card-pattern backdrop-blur-md rounded-t-3xl p-3 shadow-2xl border-t-4 border-x-4 border-yellow-400 pointer-auto space-y-2 mb-0">
+      <div class="flex flex-wrap justify-between items-center gap-2 px-1">
+        <div class="flex items-center gap-2">
+          <span class="text-2xl">🏙️</span>
+          <div>
+            <h4 class="text-xs sm:text-sm font-black text-blue-900 uppercase leading-none">BİLFEN LEGO ŞEHRİNİ İNŞA ET!</h4>
+            <p id="cityStatusText" class="text-[11px] font-bold text-slate-600 mt-0.5">Lego yapılarına dokunarak şehrini kur!</p>
+          </div>
+        </div>
+        <div class="flex items-center gap-1.5">
+          <button type="button" onclick="toggleCityDayNight()" class="bg-indigo-600 text-white px-2.5 py-1 rounded-xl text-xs font-black lego-btn flex items-center gap-1">
+            🌙 / ☀️
+          </button>
+          <button type="button" onclick="resetCityBuild()" class="bg-amber-100 text-amber-900 border border-amber-300 px-2.5 py-1 rounded-xl text-xs font-black lego-btn">
+            🔄 Sıfırla
+          </button>
+          <button type="button" onclick="exitCityBuilderToLevels()" class="bg-slate-200 text-slate-800 px-2.5 py-1 rounded-xl text-xs font-black lego-btn">
+            🗺️ Bölümler
+          </button>
+        </div>
+      </div>
+      <div id="cityPartsTray" class="grid grid-cols-4 sm:grid-cols-8 gap-1.5 py-1"></div>
+    </footer>
+
+  </div>
+
+  <!-- =========================================================================
+       BAŞLANGIÇ EKRANI & GERÇEKÇİ ÖĞRENCİ MİNİFİGÜRLERİ (LACİVERT-BORDO BİLFEN)
+       ========================================================================= -->
+  <div id="startScreen" class="fixed inset-0 lego-bg-pattern z-50 flex flex-col items-center justify-center p-3 sm:p-5 overflow-y-auto pointer-auto" style="--lego-bg-color: #0284c7;">
+    <div class="max-w-xl w-full lego-card-pattern backdrop-blur-md rounded-3xl p-5 sm:p-6 shadow-2xl border-4 border-yellow-400 text-center relative my-auto">
+      
+      <!-- Üst Bilfen Logosu -->
+      <div class="flex justify-center mb-2">
+        <svg class="h-12 sm:h-14 w-auto drop-shadow-md rounded-2xl hover:scale-105 transition-transform" viewBox="0 0 340 120" xmlns="http://www.w3.org/2000/svg">
+          <rect x="2" y="4" width="336" height="112" rx="26" fill="#003366" stroke="#1e3a8a" stroke-width="3.5" />
+          <circle cx="104" cy="31" r="13.5" fill="#ffffff" />
+          <ellipse cx="104" cy="31" rx="29" ry="6.8" fill="none" stroke="#ffffff" stroke-width="3.4" transform="rotate(-16 104 31)" />
+          <text x="170" y="74" font-family="Georgia, serif" font-weight="900" font-size="45" fill="#ffffff" text-anchor="middle" letter-spacing="7">BİLFEN</text>
+          <text x="170" y="100" font-family="'Fredoka', sans-serif" font-weight="600" font-size="14.5" fill="#e0f2fe" text-anchor="middle" letter-spacing="5.5">EĞİTİM KURUMLARI</text>
+        </svg>
+      </div>
+
+      <div class="inline-block bg-gradient-to-r from-blue-600 to-indigo-600 text-white px-4 py-1 rounded-2xl shadow mb-1">
+        <span class="text-xs sm:text-sm font-black uppercase tracking-wider">🧱 3D ROBOTİK KODLAMA DÜNYASI 🧱</span>
+      </div>
+      <h1 class="text-2xl sm:text-3xl font-black text-blue-900 tracking-tight mt-0.5">
+        LEGO KODLAMA ŞEHRİ
+      </h1>
+
+      <!-- İlerleme Özeti -->
+      <div class="mt-2.5 flex items-center justify-center gap-3 bg-amber-50 border-2 border-amber-200 rounded-2xl px-3 py-1.5 text-xs font-black text-amber-900">
+        <span id="startCompletedCount" class="bg-emerald-500 text-white px-2 py-0.5 rounded-full">🏆 0 / 20</span>
+        <span id="startTotalStars" class="bg-yellow-400 text-yellow-950 px-2 py-0.5 rounded-full">⭐ 0 / 60</span>
+        <button type="button" onclick="confirmResetAllProgress()" class="bg-rose-100 hover:bg-rose-200 text-rose-700 border border-rose-300 px-2 py-0.5 rounded-xl text-[11px] font-black cursor-pointer">
+          🗑️ Sıfırla
+        </button>
+      </div>
+
+      <!-- KIZ VE ERKEK ÖĞRENCİ SEÇİMİ (GÖRSELDEKİ GERÇEK MİNİFİGÜRLER) -->
+      <div class="mt-3.5">
+        <p class="font-black text-slate-800 text-sm mb-2">👇 Karakterini Seç:</p>
+
+        <div class="grid grid-cols-2 gap-3 max-w-md mx-auto" id="characterPicker">
+          
+          <!-- KIZ ÖĞRENCİ (Lacivert-Bordo Çizgili Kazak & At Kuyruklu) -->
+          <button type="button" onclick="selectHero('girl')" id="heroBtn-girl" class="hero-opt group p-2.5 rounded-3xl border-4 border-pink-500 bg-gradient-to-b from-pink-50 via-rose-50 to-pink-100 flex flex-col items-center transition-all hover:scale-105 active:scale-95 shadow-xl relative cursor-pointer">
+            <span id="heroSelectedBadge-girl" class="absolute top-2 right-2 bg-pink-600 text-white text-[10px] font-black px-2 py-0.5 rounded-full shadow">✓ SEÇİLİ</span>
+            <div id="heroPreview-girl" class="w-28 h-32 flex items-center justify-center bg-white rounded-2xl border-2 border-pink-200 shadow-inner p-1"></div>
+            <span class="text-sm font-black mt-1.5 text-pink-700">👧 Kız Öğrenci</span>
+          </button>
+
+          <!-- ERKEK ÖĞRENCİ (Lacivert-Bordo Çizgili Kazak & Dalgalı Saç) -->
+          <button type="button" onclick="selectHero('boy')" id="heroBtn-boy" class="hero-opt group p-2.5 rounded-3xl border-4 border-slate-200 bg-gradient-to-b from-sky-50 via-blue-50 to-sky-100 flex flex-col items-center transition-all hover:scale-105 active:scale-95 shadow-xl relative cursor-pointer">
+            <span id="heroSelectedBadge-boy" class="hidden absolute top-2 right-2 bg-blue-600 text-white text-[10px] font-black px-2 py-0.5 rounded-full shadow">✓ SEÇİLİ</span>
+            <div id="heroPreview-boy" class="w-28 h-32 flex items-center justify-center bg-white rounded-2xl border-2 border-sky-200 shadow-inner p-1"></div>
+            <span class="text-sm font-black mt-1.5 text-blue-700">👦 Erkek Öğrenci</span>
+          </button>
+
+        </div>
+      </div>
+
+      <!-- Başlat Butonu -->
+      <div class="mt-4 flex gap-2">
+        <button type="button" onclick="startGame()" class="flex-1 py-3 bg-emerald-500 hover:bg-emerald-600 text-white font-black text-lg rounded-2xl lego-btn border-b-4 border-emerald-700 flex items-center justify-center gap-2">
+          <span>BAŞLA!</span>
+          <span class="text-xl">🚀</span>
+        </button>
+        <button type="button" onclick="startScreenToLevelSelect()" class="w-32 py-3 bg-amber-400 hover:bg-amber-500 text-amber-950 font-black text-sm rounded-2xl lego-btn border-b-4 border-amber-600">
+          🗺️ Harita
+        </button>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- BÖLÜM SEÇİM MODALI -->
+  <div id="levelSelectModal" class="fixed inset-0 lego-bg-pattern z-50 hidden flex items-center justify-center p-3 sm:p-4 pointer-auto">
+    <div class="lego-card-pattern rounded-3xl p-4 sm:p-5 max-w-xl w-full text-center border-4 border-yellow-400 shadow-2xl max-h-[92vh] flex flex-col">
+      <div class="flex items-center justify-between pb-2 border-b-2 border-slate-200">
+        <h3 class="text-lg font-black text-blue-900 flex items-center gap-1.5">
+          <span>🗺️</span> <span>Bölüm Haritası</span>
+        </h3>
+        <button type="button" onclick="closeLevelSelectModal()" class="w-8 h-8 rounded-full bg-slate-200 text-slate-700 font-black text-base flex items-center justify-center">
+          ✕
+        </button>
+      </div>
+      <div class="overflow-y-auto py-2.5 space-y-2 flex-1 text-left" id="levelSelectListHolder"></div>
+    </div>
+  </div>
+
+  <!-- KUTLAMA VE YILDIZ MODALI -->
+  <div id="celebrationModal" class="fixed inset-0 lego-bg-pattern/90 backdrop-blur-md z-50 hidden flex items-center justify-center p-4 pointer-auto">
+    <div class="lego-card-pattern rounded-3xl p-5 max-w-sm w-full text-center border-4 border-yellow-400 shadow-2xl">
+      <div class="text-4xl mb-1">🎉 🏆 🎉</div>
+      <h3 class="text-2xl font-black text-blue-900" id="modalTitle">TEBRİKLER!</h3>
+      
+      <div class="my-2 flex flex-col items-center">
+        <div id="modalStarsIcons" class="text-3xl tracking-widest">⭐⭐⭐</div>
+      </div>
+
+      <div class="my-3 p-3 bg-gradient-to-b from-sky-100 to-emerald-100 rounded-2xl border-2 border-emerald-300 flex flex-col items-center">
+        <div id="modalSvgPiece" class="text-5xl mb-1">🪵</div>
+        <div id="modalPieceName" class="bg-white/95 px-3 py-1 rounded-full text-xs font-black text-emerald-900 shadow">
+          Parça Toplandı!
+        </div>
+      </div>
+
+      <button type="button" id="modalActionBtn" onclick="nextLevel()" class="w-full py-3 bg-emerald-500 hover:bg-emerald-600 border-b-4 border-emerald-700 text-white font-black text-base rounded-2xl lego-btn">
+        SONRAKİ BÖLÜM ➔
+      </button>
+    </div>
+  </div>
+
+  <!-- SIFIRLAMA ONAY MODALI -->
+  <div id="resetConfirmModal" class="fixed inset-0 bg-slate-900/75 backdrop-blur-sm z-50 hidden flex items-center justify-center p-4 pointer-auto">
+    <div class="lego-card-pattern rounded-3xl p-5 max-w-sm w-full text-center border-4 border-rose-400 shadow-2xl">
+      <div class="text-4xl mb-1">🗑️</div>
+      <h3 class="text-lg font-black text-rose-700">Tüm İlerleme Sıfırlansın mı?</h3>
+      <div class="mt-4 flex gap-2">
+        <button type="button" onclick="closeResetConfirmModal()" class="flex-1 py-2 bg-slate-200 text-slate-800 font-black rounded-xl text-xs lego-btn">
+          Vazgeç
+        </button>
+        <button type="button" onclick="executeResetAllProgress()" class="flex-1 py-2 bg-rose-500 text-white font-black rounded-xl text-xs lego-btn">
+          Evet, Sıfırla
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- TOAST BİLGİLENDİRME -->
+  <div id="toastMessage" class="fixed top-5 left-1/2 -translate-x-1/2 bg-rose-600 text-white px-4 py-2 rounded-2xl shadow-2xl border-2 border-white font-black text-xs flex items-center gap-2 transform -translate-y-28 transition-transform duration-300 z-50 pointer-events-none">
+    <span id="toastIcon">⚠️</span>
+    <span id="toastText">Hata!</span>
+  </div>
+
+  <script>
+    /* =========================================================================
+       1. SES SİSTEMİ
+       ========================================================================= */
+    let synth = null, metalSynth = null, audioStarted = false;
+
+    function initAudio() {
+      if (audioStarted || typeof Tone === 'undefined') return;
+      try {
+        Tone.start();
+        synth = new Tone.PolySynth(Tone.Synth, {
+          oscillator: { type: 'triangle' },
+          envelope: { attack: 0.01, decay: 0.08, sustain: 0.05, release: 0.15 }
+        }).toDestination();
+
+        metalSynth = new Tone.MembraneSynth({
+          pitchDecay: 0.02,
+          octaves: 2.5,
+          oscillator: { type: 'sine' },
+          envelope: { attack: 0.001, decay: 0.08, sustain: 0 }
+        }).toDestination();
+        audioStarted = true;
+      } catch (e) {}
+    }
+
+    function playSound(type) {
+      initAudio();
+      if (!synth) return;
+      try {
+        const now = Tone.now();
+        if (type === 'click') synth.triggerAttackRelease("C5", "32n", now);
+        else if (type === 'step') {
+          synth.triggerAttackRelease("E5", "32n", now, 0.4);
+          if (metalSynth) metalSynth.triggerAttackRelease("G2", "32n", now, 0.2);
+        } else if (type === 'turn') {
+          synth.triggerAttackRelease("A4", "32n", now, 0.35);
+        } else if (type === 'brick') {
+          synth.triggerAttackRelease(["G5", "C6"], "24n", now);
+          if (metalSynth) metalSynth.triggerAttackRelease("E3", "32n", now + 0.015, 0.5);
+        } else if (type === 'bump') {
+          synth.triggerAttackRelease(["D3", "C3"], "12n", now);
+        } else if (type === 'win') {
+          synth.triggerAttackRelease(["C5", "E5", "G5", "C6"], "10n", now);
+        }
+      } catch (e) {}
+    }
+
+    /* =========================================================================
+       2. HER BÖLÜMDE DEĞİŞEN LEGO ARKA PLAN RENKLERİ
+       ========================================================================= */
+    const LEVEL_BG_COLORS = [
+      '#0284c7', '#db2777', '#16a34a', '#7c3aed', '#ea580c',
+      '#0d9488', '#2563eb', '#e11d48', '#059669', '#9333ea',
+      '#d97706', '#0891b2', '#4f46e5', '#c026d3', '#15803d',
+      '#dc2626', '#0369a1', '#be185d', '#6d28d9', '#b45309'
+    ];
+
+    function applyLevelBackgroundTheme(levelIndex) {
+      const color = LEVEL_BG_COLORS[levelIndex % LEVEL_BG_COLORS.length];
+      document.body.style.setProperty('--lego-bg-color', color);
+    }
+
+    /* =========================================================================
+       3. GÖNDERİLEN GÖRSELLERE BİREBİR UYGUN BİLFEN MİNİFİGÜRLERİ
+       ========================================================================= */
+    const HEROES = {
+      girl: {
+        name: "Kız Öğrenci (Zeynep)",
+        gender: "girl",
+        hairColor: 0x652810,      // Kahverengi saç
+        torsoStripe1: 0x0f2547,   // Lacivert çizgili Bilfen kazağı
+        torsoStripe2: 0x75142b,   // Bordo çizgili Bilfen kazağı
+        collarColor: 0xffffff,    // Beyaz polo yaka
+        skirtColor: 0x1e3050      // Lacivert pileli etek
+      },
+      boy: {
+        name: "Erkek Öğrenci (Emre)",
+        gender: "boy",
+        hairColor: 0x8a451d,      // Dalgalı açık kahve saç
+        torsoStripe1: 0x0f2547,   // Lacivert çizgili Bilfen kazağı
+        torsoStripe2: 0x75142b,   // Bordo çizgili Bilfen kazağı
+        collarColor: 0xffffff,    // Beyaz polo yaka
+        legsColor: 0x1e3050       // Lacivert pantolon
+      }
+    };
+    let selectedHeroKey = 'girl';
+
+    const WORLDS = [
+      { id: 0, title: '🌳 PARK', icon: '🌳' },
+      { id: 1, title: '🏠 EV', icon: '🏠' },
+      { id: 2, title: '💻 BİLİM', icon: '💻' },
+      { id: 3, title: '🚒 ARAÇ', icon: '🚒' }
+    ];
+
+    const DIR_DELTAS = [
+      { dx: 0, dy: -1, rotY: Math.PI },       // 0: Kuzey (Yukarı)
+      { dx: 1, dy: 0,  rotY: Math.PI / 2 },   // 1: Doğu (Sağ)
+      { dx: 0, dy: 1,  rotY: 0 },             // 2: Güney (Aşağı)
+      { dx: -1, dy: 0, rotY: -Math.PI / 2 }   // 3: Batı (Sol)
+    ];
+
+    /* 20 KADEMELİ BÖLÜM */
+    const LEVELS = [
+      // 1-5 Park
+      { id: 1, worldIndex: 0, title: "Ağacın Kökü", gridSize: 5, startPos: { x: 2, y: 4 }, startDir: 0, partType: "trunk", partName: "Gövde Bloğu", partIcon: "🪵", bricks: [{ x: 2, y: 3, type: 'trunk' }], obstacles: [], goal: { x: 2, y: 2 }, optimalSteps: 2 },
+      { id: 2, worldIndex: 0, title: "Dallar", gridSize: 5, startPos: { x: 2, y: 4 }, startDir: 0, partType: "branch", partName: "Dal Parçası", partIcon: "🌿", bricks: [{ x: 2, y: 3, type: 'branch' }, { x: 2, y: 2, type: 'branch' }], obstacles: [], goal: { x: 2, y: 1 }, optimalSteps: 3 },
+      { id: 3, worldIndex: 0, title: "Geniş Yapraklar", gridSize: 5, startPos: { x: 1, y: 3 }, startDir: 0, partType: "leaf_base", partName: "Yaprak Plakası", partIcon: "🍃", bricks: [{ x: 1, y: 2, type: 'leaf_base' }], obstacles: [{ x: 1, y: 1 }], goal: { x: 2, y: 2 }, optimalSteps: 3 },
+      { id: 4, worldIndex: 0, title: "Tepe Tacı", gridSize: 5, startPos: { x: 3, y: 4 }, startDir: 0, partType: "leaf_top", partName: "Zirve Tacı", partIcon: "🌲", bricks: [{ x: 3, y: 2, type: 'leaf_top' }], obstacles: [{ x: 3, y: 1 }, { x: 1, y: 3 }], goal: { x: 2, y: 2 }, optimalSteps: 4 },
+      { id: 5, worldIndex: 0, title: "Elmalar", gridSize: 5, startPos: { x: 1, y: 4 }, startDir: 0, partType: "apple", partName: "Lego Elması", partIcon: "🍎", bricks: [{ x: 1, y: 3, type: 'apple' }, { x: 2, y: 2, type: 'apple' }], obstacles: [{ x: 1, y: 1 }], goal: { x: 3, y: 2 }, optimalSteps: 5 },
+
+      // 6-10 Ev
+      { id: 6, worldIndex: 1, title: "Duvar Bloğu", gridSize: 5, startPos: { x: 1, y: 4 }, startDir: 0, partType: "house_wall", partName: "Duvar Tuğlası", partIcon: "🧱", bricks: [{ x: 1, y: 2, type: 'house_wall' }], obstacles: [{ x: 2, y: 3 }], goal: { x: 2, y: 2 }, optimalSteps: 4 },
+      { id: 7, worldIndex: 1, title: "Kapı Bloğu", gridSize: 5, startPos: { x: 3, y: 4 }, startDir: 0, partType: "house_door", partName: "Lego Kapısı", partIcon: "🚪", bricks: [{ x: 3, y: 2, type: 'house_door' }], obstacles: [{ x: 2, y: 3 }], goal: { x: 2, y: 2 }, optimalSteps: 4 },
+      { id: 8, worldIndex: 1, title: "Camlı Pencere", gridSize: 5, startPos: { x: 1, y: 4 }, startDir: 0, partType: "house_window", partName: "Pencere", partIcon: "🪟", bricks: [{ x: 1, y: 3, type: 'house_window' }, { x: 2, y: 2, type: 'house_window' }], obstacles: [{ x: 1, y: 2 }], goal: { x: 2, y: 1 }, optimalSteps: 6 },
+      { id: 9, worldIndex: 1, title: "Üçgen Çatı", gridSize: 5, startPos: { x: 1, y: 4 }, startDir: 0, partType: "house_roof", partName: "Çatı Bloğu", partIcon: "🏠", bricks: [{ x: 1, y: 2, type: 'house_roof' }], obstacles: [{ x: 2, y: 3 }, { x: 1, y: 1 }], goal: { x: 3, y: 2 }, optimalSteps: 5 },
+      { id: 10, worldIndex: 1, title: "Dumanlı Baca", gridSize: 5, startPos: { x: 3, y: 4 }, startDir: 0, partType: "house_chimney", partName: "Baca", partIcon: "☁️", bricks: [{ x: 3, y: 2, type: 'house_chimney' }], obstacles: [{ x: 2, y: 3 }], goal: { x: 1, y: 2 }, optimalSteps: 5 },
+
+      // 11-15 Bilgisayar
+      { id: 11, worldIndex: 2, title: "Kasa Bloğu", gridSize: 5, startPos: { x: 0, y: 4 }, startDir: 0, partType: "comp_case", partName: "Kasa", partIcon: "🖥️", bricks: [{ x: 0, y: 2, type: 'comp_case' }], obstacles: [{ x: 1, y: 3 }], goal: { x: 1, y: 2 }, optimalSteps: 4 },
+      { id: 12, worldIndex: 2, title: "Monitör", gridSize: 5, startPos: { x: 4, y: 4 }, startDir: 0, partType: "comp_monitor", partName: "Monitör", partIcon: "💻", bricks: [{ x: 4, y: 2, type: 'comp_monitor' }], obstacles: [{ x: 3, y: 3 }], goal: { x: 2, y: 2 }, optimalSteps: 5 },
+      { id: 13, worldIndex: 2, title: "Klavye", gridSize: 5, startPos: { x: 0, y: 4 }, startDir: 0, partType: "comp_keyboard", partName: "Klavye", partIcon: "⌨️", bricks: [{ x: 0, y: 2, type: 'comp_keyboard' }, { x: 2, y: 2, type: 'comp_keyboard' }], obstacles: [{ x: 1, y: 3 }], goal: { x: 2, y: 1 }, optimalSteps: 6 },
+      { id: 14, worldIndex: 2, title: "Fare", gridSize: 5, startPos: { x: 4, y: 4 }, startDir: 0, partType: "comp_mouse", partName: "Fare", partIcon: "🖱️", bricks: [{ x: 4, y: 2, type: 'comp_mouse' }, { x: 2, y: 2, type: 'comp_mouse' }], obstacles: [{ x: 3, y: 3 }], goal: { x: 2, y: 1 }, optimalSteps: 6 },
+      { id: 15, worldIndex: 2, title: "Hoparlör", gridSize: 5, startPos: { x: 1, y: 4 }, startDir: 0, partType: "comp_speaker", partName: "Hoparlör", partIcon: "🔊", bricks: [{ x: 1, y: 2, type: 'comp_speaker' }, { x: 3, y: 2, type: 'comp_speaker' }], obstacles: [{ x: 2, y: 3 }], goal: { x: 3, y: 1 }, optimalSteps: 7 },
+
+      // 16-20 Araç
+      { id: 16, worldIndex: 3, title: "Şasi Plakası", gridSize: 5, startPos: { x: 0, y: 4 }, startDir: 0, partType: "car_chassis", partName: "Şasi", partIcon: "🛹", bricks: [{ x: 0, y: 2, type: 'car_chassis' }], obstacles: [{ x: 1, y: 3 }], goal: { x: 2, y: 2 }, optimalSteps: 5 },
+      { id: 17, worldIndex: 3, title: "Tekerlekler", gridSize: 5, startPos: { x: 4, y: 4 }, startDir: 0, partType: "car_wheel", partName: "Tekerlek", partIcon: "🛞", bricks: [{ x: 4, y: 2, type: 'car_wheel' }], obstacles: [{ x: 3, y: 3 }], goal: { x: 2, y: 2 }, optimalSteps: 5 },
+      { id: 18, worldIndex: 3, title: "Kabin", gridSize: 5, startPos: { x: 0, y: 4 }, startDir: 0, partType: "car_cabin", partName: "Kabin", partIcon: "🚖", bricks: [{ x: 0, y: 2, type: 'car_cabin' }, { x: 2, y: 2, type: 'car_cabin' }], obstacles: [{ x: 1, y: 3 }], goal: { x: 3, y: 2 }, optimalSteps: 7 },
+      { id: 19, worldIndex: 3, title: "Siren", gridSize: 5, startPos: { x: 4, y: 4 }, startDir: 0, partType: "car_siren", partName: "Siren", partIcon: "🚨", bricks: [{ x: 4, y: 2, type: 'car_siren' }, { x: 2, y: 2, type: 'car_siren' }], obstacles: [{ x: 3, y: 3 }], goal: { x: 1, y: 2 }, optimalSteps: 7 },
+      { id: 20, worldIndex: 3, title: "Şarj Ünitesi", gridSize: 5, startPos: { x: 0, y: 4 }, startDir: 0, partType: "car_charger", partName: "Şarj Ünitesi", partIcon: "⚡", bricks: [{ x: 0, y: 2, type: 'car_charger' }, { x: 2, y: 2, type: 'car_charger' }], obstacles: [{ x: 1, y: 3 }], goal: { x: 3, y: 2 }, optimalSteps: 7 }
+    ];
+
+    /* =========================================================================
+       4. OYUN DURUMU VE LOCALSTORAGE
+       ========================================================================= */
+    const STORAGE_KEY = 'bilfen_lego_kodlama_v7_save';
+    let currentLevelIndex = 0;
+    let playerPos = { x: 2, y: 4 };
+    let playerDir = 0;
+    let collectedBricks = 0;
+    let commands = [];
+    let isExecuting = false;
+    let activeLevelBricks = [];
+    let completedLevels = new Array(20).fill(false);
+    let levelStars = new Array(20).fill(0);
+
+    let isBuildMode = false;
+    let currentBuildStep = 0;
+    let buildAssemblyGroup = null;
+
+    let isCityMode = false;
+    let cityAssemblyGroup = null;
+    let cityPlacedSteps = new Array(8).fill(false);
+    let isCityNight = false;
+    let cityCarMesh = null;
+
+    function loadSavedProgress() {
+      try {
+        const raw = localStorage.getItem(STORAGE_KEY);
+        if (raw) {
+          const data = JSON.parse(raw);
+          if (Array.isArray(data.completedLevels)) completedLevels = data.completedLevels;
+          if (Array.isArray(data.levelStars)) levelStars = data.levelStars;
+          if (data.selectedHeroKey) selectedHeroKey = data.selectedHeroKey;
+        }
+      } catch (e) {}
+      updateProgressCountersUI();
+    }
+
+    function saveProgress() {
+      try {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify({ completedLevels, levelStars, selectedHeroKey }));
+      } catch (e) {}
+      updateProgressCountersUI();
+    }
+
+    function getTotalStars() {
+      return levelStars.reduce((sum, s) => sum + (s || 0), 0);
+    }
+
+    function updateProgressCountersUI() {
+      const totalStars = getTotalStars();
+      const doneCount = completedLevels.filter(Boolean).length;
+      document.getElementById('totalStarsCounter').innerText = `${totalStars} / 60`;
+      document.getElementById('startCompletedCount').innerText = `🏆 ${doneCount} / 20`;
+      document.getElementById('startTotalStars').innerText = `⭐ ${totalStars} / 60`;
+    }
+
+    function confirmResetAllProgress() {
+      playSound('click');
+      document.getElementById('resetConfirmModal').classList.remove('hidden');
+    }
+
+    function closeResetConfirmModal() {
+      playSound('click');
+      document.getElementById('resetConfirmModal').classList.add('hidden');
+    }
+
+    function executeResetAllProgress() {
+      playSound('bump');
+      completedLevels = new Array(20).fill(false);
+      levelStars = new Array(20).fill(0);
+      cityPlacedSteps = new Array(8).fill(false);
+      saveProgress();
+      closeResetConfirmModal();
+      closeLevelSelectModal();
+      loadLevel(0);
+      showToast("Tüm bölümler sıfırlandı!", "🔄");
+    }
+
+    /* =========================================================================
+       5. THREE.JS 3D SAHNE & BELİRGİN ENGEL MODELİ (TRAFİK KONİSİ)
+       ========================================================================= */
+    let scene, camera, renderer, controls, ambientLight, sunLight;
+    let baseplateGroup, boardGroup, pathPreviewGroup, characterGroup, itemsGroup, obstaclesGroup, goalGroup, decorGroup;
+    let characterMesh = null;
+    let isTopDownCamera = false;
+    let isCameraMoving = true;
+    let targetCameraPos = null;
+    let targetCameraLook = null;
+
+    function createLegoMaterial(colorHex, options = {}) {
+      return new THREE.MeshPhysicalMaterial({
+        color: colorHex,
+        roughness: 0.2,
+        metalness: 0.04,
+        clearcoat: 0.55,
+        clearcoatRoughness: 0.12,
+        reflectivity: 0.6,
+        ...options
+      });
+    }
+
+    function init3DScene() {
+      const container = document.getElementById('threeCanvas');
+      targetCameraPos = new THREE.Vector3(0, 17.5, 16.5);
+      targetCameraLook = new THREE.Vector3(0, 0.0, 1.2);
+
+      scene = new THREE.Scene();
+      camera = new THREE.PerspectiveCamera(42, window.innerWidth / window.innerHeight, 0.1, 1000);
+      camera.position.copy(targetCameraPos);
+
+      renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, powerPreference: "high-performance" });
+      renderer.setSize(window.innerWidth, window.innerHeight);
+      renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+      renderer.shadowMap.enabled = true;
+      renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+      container.innerHTML = '';
+      container.appendChild(renderer.domElement);
+
+      controls = new THREE.OrbitControls(camera, renderer.domElement);
+      controls.enableDamping = true;
+      controls.dampingFactor = 0.08;
+      controls.minAzimuthAngle = 0;
+      controls.maxAzimuthAngle = 0;
+      controls.maxPolarAngle = Math.PI / 2.15;
+      controls.minDistance = 8;
+      controls.maxDistance = 28;
+      controls.target.copy(targetCameraLook);
+
+      ambientLight = new THREE.AmbientLight(0xffffff, 0.88);
+      scene.add(ambientLight);
+
+      sunLight = new THREE.DirectionalLight(0xfffbeb, 1.25);
+      sunLight.position.set(12, 26, 16);
+      sunLight.castShadow = true;
+      scene.add(sunLight);
+
+      baseplateGroup = new THREE.Group(); scene.add(baseplateGroup);
+      decorGroup = new THREE.Group(); scene.add(decorGroup);
+      boardGroup = new THREE.Group(); scene.add(boardGroup);
+      pathPreviewGroup = new THREE.Group(); scene.add(pathPreviewGroup);
+      obstaclesGroup = new THREE.Group(); scene.add(obstaclesGroup);
+      itemsGroup = new THREE.Group(); scene.add(itemsGroup);
+      goalGroup = new THREE.Group(); scene.add(goalGroup);
+      characterGroup = new THREE.Group(); scene.add(characterGroup);
+
+      buildBaseWorld();
+      window.addEventListener('resize', onWindowResize);
+      animate();
+    }
+
+    function onWindowResize() {
+      if (!camera || !renderer) return;
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+    }
+
+    function toggleCameraView() {
+      playSound('click');
+      if (isTopDownCamera) {
+        isTopDownCamera = false;
+        targetCameraPos.set(0, 17.5, 16.5);
+        targetCameraLook.set(0, 0.0, 1.2);
+      } else {
+        isTopDownCamera = true;
+        targetCameraPos.set(0, 22.5, 1.21);
+        targetCameraLook.set(0, 0, 1.2);
+      }
+      isCameraMoving = true;
+    }
+
+    /* KESİNLİKLE TOPLANACAK ŞEY GİBİ DURMAYAN NET ENGEL MODELİ: KIRMIZI-BEYAZ ÇİZGİLİ UYARI TRAFİK KONİSİ & BARİYER */
+    function create3DObstacleBarrier() {
+      const group = new THREE.Group();
+
+      // Kırmızı Kare Taban
+      const basePlate = new THREE.Mesh(
+        new THREE.BoxGeometry(1.2, 0.12, 1.2),
+        createLegoMaterial(0xdc2626)
+      );
+      basePlate.position.y = 0.06;
+      group.add(basePlate);
+
+      // Kırmızı-Beyaz Çizgili Koni
+      const coneBottom = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.36, 0.52, 0.45, 18),
+        createLegoMaterial(0xef4444)
+      );
+      coneBottom.position.y = 0.32;
+      group.add(coneBottom);
+
+      const coneWhiteStripe = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.24, 0.36, 0.32, 18),
+        createLegoMaterial(0xffffff)
+      );
+      coneWhiteStripe.position.y = 0.68;
+      group.add(coneWhiteStripe);
+
+      const coneTop = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.12, 0.24, 0.32, 18),
+        createLegoMaterial(0xef4444)
+      );
+      coneTop.position.y = 0.98;
+      group.add(coneTop);
+
+      // Üstünde Kırmızı Çarpı (❌ GEÇİLMEZ) Rozeti
+      const signCanvas = document.createElement('canvas');
+      signCanvas.width = 128; signCanvas.height = 128;
+      const sctx = signCanvas.getContext('2d');
+      sctx.fillStyle = '#ef4444'; sctx.beginPath(); sctx.arc(64, 64, 58, 0, Math.PI*2); sctx.fill();
+      sctx.strokeStyle = '#ffffff'; sctx.lineWidth = 14; sctx.lineCap = 'round';
+      sctx.beginPath(); sctx.moveTo(34, 34); sctx.lineTo(94, 94); sctx.moveTo(94, 34); sctx.lineTo(34, 94); sctx.stroke();
+
+      const crossSign = new THREE.Mesh(
+        new THREE.PlaneGeometry(0.55, 0.55),
+        new THREE.MeshBasicMaterial({ map: new THREE.CanvasTexture(signCanvas), transparent: true })
+      );
+      crossSign.position.set(0, 1.35, 0);
+      group.add(crossSign);
+
+      return group;
+    }
+
+    /* =========================================================================
+       6. 3D GERÇEKÇİ BİLFEN MİNİFİGÜR MODELİ (FOTOĞRAFTAKİ LACİVERT-BORDO ÇİZGİLİ)
+       ========================================================================= */
+    function createMinifigureMesh(heroKey) {
+      const hero = HEROES[heroKey] || HEROES.girl;
+      const group = new THREE.Group();
+      const skinMat = createLegoMaterial(0xfacc15); // Lego sarısı kafa
+
+      // Yön Göstergesi (Öğrencinin yönünü gösteren parlak sarı ok)
+      const arrowCone = new THREE.Mesh(
+        new THREE.ConeGeometry(0.26, 0.45, 4),
+        createLegoMaterial(0xfacc15)
+      );
+      arrowCone.rotation.x = Math.PI / 2;
+      arrowCone.rotation.z = Math.PI / 4;
+      arrowCone.position.set(0, 0.12, 0.85);
+      group.add(arrowCone);
+
+      // Silindirik Lego Kafa & Stud
+      const headMesh = new THREE.Mesh(new THREE.CylinderGeometry(0.33, 0.33, 0.45, 22), skinMat);
+      headMesh.position.y = 1.46;
+      headMesh.castShadow = true;
+      const headStud = new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.16, 0.12, 16), skinMat);
+      headStud.position.y = 0.28;
+      headMesh.add(headStud);
+
+      // Yüz İfadesi
+      const faceCanvas = document.createElement('canvas');
+      faceCanvas.width = 256; faceCanvas.height = 256;
+      const fctx = faceCanvas.getContext('2d');
+      fctx.fillStyle = '#facc15'; fctx.fillRect(0, 0, 256, 256);
+      fctx.fillStyle = '#0f172a';
+      fctx.beginPath(); fctx.arc(85, 110, 15, 0, Math.PI * 2); fctx.arc(171, 110, 15, 0, Math.PI * 2); fctx.fill();
+      fctx.fillStyle = '#ffffff';
+      fctx.beginPath(); fctx.arc(81, 104, 5.5, 0, Math.PI * 2); fctx.arc(167, 104, 5.5, 0, Math.PI * 2); fctx.fill();
+
+      if (hero.gender === 'girl') {
+        fctx.fillStyle = 'rgba(244, 114, 182, 0.6)';
+        fctx.beginPath(); fctx.arc(62, 134, 14, 0, Math.PI * 2); fctx.arc(194, 134, 14, 0, Math.PI * 2); fctx.fill();
+      }
+      fctx.strokeStyle = '#0f172a'; fctx.lineWidth = 8; fctx.lineCap = 'round';
+      fctx.beginPath(); fctx.arc(128, 132, 34, 0.16 * Math.PI, 0.84 * Math.PI, false); fctx.stroke();
+
+      const facePlane = new THREE.Mesh(
+        new THREE.PlaneGeometry(0.48, 0.44),
+        new THREE.MeshBasicMaterial({ map: new THREE.CanvasTexture(faceCanvas), transparent: true })
+      );
+      facePlane.position.set(0, 0, 0.34);
+      headMesh.add(facePlane);
+      group.add(headMesh);
+
+      // Saç Tasarımı
+      const hairMat = createLegoMaterial(hero.hairColor);
+      if (hero.gender === 'girl') {
+        // İki yanda at kuyruğu (Görseldeki gibi)
+        const hairCap = new THREE.Mesh(new THREE.SphereGeometry(0.37, 20, 14, 0, Math.PI * 2, 0, Math.PI / 1.8), hairMat);
+        hairCap.position.y = 0.14; headMesh.add(hairCap);
+
+        const ribbonMat = createLegoMaterial(0x2563eb); // Mavi toka
+        [-0.38, 0.38].forEach(px => {
+          const ponytail = new THREE.Mesh(new THREE.SphereGeometry(0.18, 14, 12), hairMat);
+          ponytail.scale.set(0.9, 1.45, 0.9);
+          ponytail.position.set(px, 0.05, -0.08);
+          headMesh.add(ponytail);
+          const bow = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.1, 0.12), ribbonMat);
+          bow.position.set(px * 0.92, 0.2, -0.05);
+          headMesh.add(bow);
+        });
+      } else {
+        // Dalgalı erkek saçı (Görseldeki gibi)
+        const hairDome = new THREE.Mesh(new THREE.SphereGeometry(0.38, 20, 14, 0, Math.PI * 2, 0, Math.PI / 1.7), hairMat);
+        hairDome.position.y = 0.16; headMesh.add(hairDome);
+        const frontLock = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.14, 0.18), hairMat);
+        frontLock.position.set(0, 0.28, 0.3); frontLock.rotation.x = -0.3; headMesh.add(frontLock);
+      }
+
+      // GÖRSELDEKİ BİLFEN KAZAĞI (LACİVERT VE BORDO ENİNE ÇİZGİLİ DOKU)
+      const sweaterCanvas = document.createElement('canvas');
+      sweaterCanvas.width = 128; sweaterCanvas.height = 128;
+      const sctx = sweaterCanvas.getContext('2d');
+      sctx.fillStyle = '#0f2547'; sctx.fillRect(0, 0, 128, 128); // Lacivert
+      sctx.fillStyle = '#75142b'; // Bordo çizgiler
+      sctx.fillRect(0, 24, 128, 26);
+      sctx.fillRect(0, 74, 128, 26);
+      // Beyaz polo yaka
+      sctx.fillStyle = '#ffffff';
+      sctx.beginPath(); sctx.moveTo(38, 0); sctx.lineTo(64, 30); sctx.lineTo(90, 0); sctx.closePath(); sctx.fill();
+
+      const sweaterTex = new THREE.CanvasTexture(sweaterCanvas);
+      const torsoMat = createLegoMaterial(0xffffff, { map: sweaterTex });
+
+      const torsoGeom = new THREE.CylinderGeometry(0.38, 0.48, 0.66, 4);
+      torsoGeom.rotateY(Math.PI / 4);
+      const torsoMesh = new THREE.Mesh(torsoGeom, torsoMat);
+      torsoMesh.position.y = 0.88;
+      torsoMesh.scale.set(1.15, 1, 0.72);
+      torsoMesh.castShadow = true;
+      group.add(torsoMesh);
+
+      // Kollar & Sarı Lego Elleri
+      const armMat = createLegoMaterial(hero.torsoStripe1);
+      const armGeom = new THREE.CylinderGeometry(0.1, 0.1, 0.42, 12);
+      const handGeom = new THREE.TorusGeometry(0.1, 0.045, 8, 16, Math.PI * 1.5);
+
+      const leftArmGroup = new THREE.Group();
+      leftArmGroup.position.set(-0.46, 1.1, 0);
+      const leftArm = new THREE.Mesh(armGeom, armMat); leftArm.position.y = -0.2; leftArm.rotation.z = 0.22; leftArmGroup.add(leftArm);
+      const leftHand = new THREE.Mesh(handGeom, skinMat); leftHand.position.set(-0.06, -0.42, 0); leftHand.rotation.x = Math.PI / 2; leftArmGroup.add(leftHand);
+      group.add(leftArmGroup);
+
+      const rightArmGroup = new THREE.Group();
+      rightArmGroup.position.set(0.46, 1.1, 0);
+      const rightArm = new THREE.Mesh(armGeom, armMat); rightArm.position.y = -0.2; rightArm.rotation.z = -0.22; rightArmGroup.add(rightArm);
+      const rightHand = new THREE.Mesh(handGeom, skinMat); rightHand.position.set(0.06, -0.42, 0); rightHand.rotation.x = Math.PI / 2; rightArmGroup.add(rightHand);
+      group.add(rightArmGroup);
+
+      // Alt Gövde: Kız için Lacivert Etek, Erkek için Lacivert Pantolon
+      const legsMat = createLegoMaterial(hero.gender === 'girl' ? hero.skirtColor : hero.legsColor);
+      const hipMesh = new THREE.Mesh(new THREE.BoxGeometry(0.68, 0.16, 0.38), legsMat);
+      hipMesh.position.y = 0.48; group.add(hipMesh);
+
+      const leftLegGroup = new THREE.Group();
+      leftLegGroup.position.set(-0.18, 0.42, 0);
+      const leftLeg = new THREE.Mesh(new THREE.BoxGeometry(0.28, 0.46, 0.36), legsMat); leftLeg.position.y = -0.23; leftLegGroup.add(leftLeg);
+      group.add(leftLegGroup);
+
+      const rightLegGroup = new THREE.Group();
+      rightLegGroup.position.set(0.18, 0.42, 0);
+      const rightLeg = new THREE.Mesh(new THREE.BoxGeometry(0.28, 0.46, 0.36), legsMat); rightLeg.position.y = -0.23; rightLegGroup.add(rightLeg);
+      group.add(rightLegGroup);
+
+      group.userData = { leftArm: leftArmGroup, rightArm: rightArmGroup, leftLeg: leftLegGroup, rightLeg: rightLegGroup, head: headMesh };
+      return group;
+    }
+
+    /* =========================================================================
+       7. 5x5 LEGO ZEMİNİ & DÖNÜŞLÜ ADIM İZİ ÖNİZLEMESİ
+       ========================================================================= */
+    const CELL_SIZE = 2.0;
+    function gridToWorld(gx, gy) {
+      return { x: (gx - 2) * CELL_SIZE, z: (gy - 2) * CELL_SIZE };
+    }
+
+    function buildBaseWorld() {
+      const baseplateWidth = 5 * CELL_SIZE + 1.4;
+      const baseMesh = new THREE.Mesh(
+        new THREE.BoxGeometry(baseplateWidth, 0.45, baseplateWidth),
+        createLegoMaterial(0x2e7d32)
+      );
+      baseMesh.position.y = -0.22;
+      baseMesh.receiveShadow = true;
+      baseplateGroup.add(baseMesh);
+    }
+
+    function buildLevelBoard() {
+      if (!boardGroup) return;
+      while (boardGroup.children.length > 0) boardGroup.remove(boardGroup.children[0]);
+      const lvl = LEVELS[currentLevelIndex];
+
+      for (let y = 0; y < lvl.gridSize; y++) {
+        for (let x = 0; x < lvl.gridSize; x++) {
+          const wpos = gridToWorld(x, y);
+          const isEven = (x + y) % 2 === 0;
+          const tileMat = createLegoMaterial(isEven ? 0x84cc16 : 0x74b816);
+          const tileMesh = new THREE.Mesh(new THREE.BoxGeometry(CELL_SIZE - 0.08, 0.1, CELL_SIZE - 0.08), tileMat);
+          tileMesh.position.set(wpos.x, 0.05, wpos.z);
+          boardGroup.add(tileMesh);
+
+          // 4 Lego Stud
+          const sGeom = new THREE.CylinderGeometry(0.22, 0.22, 0.14, 16);
+          const smat = createLegoMaterial(isEven ? 0x84cc16 : 0x65a30d);
+          [-0.48, 0.48].forEach(ox => {
+            [-0.48, 0.48].forEach(oz => {
+              const stud = new THREE.Mesh(sGeom, smat);
+              stud.position.set(wpos.x + ox, 0.1, wpos.z + oz);
+              boardGroup.add(stud);
+            });
+          });
+        }
+      }
+    }
+
+    function renderPathPreviewOnBoard() {
+      if (!pathPreviewGroup) return;
+      while (pathPreviewGroup.children.length > 0) pathPreviewGroup.remove(pathPreviewGroup.children[0]);
+      if (isBuildMode || isCityMode || commands.length === 0) return;
+
+      const lvl = LEVELS[currentLevelIndex];
+      let simX = lvl.startPos.x;
+      let simY = lvl.startPos.y;
+      let simDir = lvl.startDir !== undefined ? lvl.startDir : 0;
+
+      for (let i = 0; i < commands.length; i++) {
+        const cmd = commands[i];
+        if (cmd === 'turnLeft') {
+          simDir = (simDir + 3) % 4;
+          const wpos = gridToWorld(simX, simY);
+          const ring = new THREE.Mesh(new THREE.TorusGeometry(0.42, 0.07, 8, 20), createLegoMaterial(0xf97316));
+          ring.rotation.x = Math.PI / 2; ring.position.set(wpos.x, 0.18 + (i * 0.01), wpos.z);
+          pathPreviewGroup.add(ring);
+          continue;
+        } else if (cmd === 'turnRight') {
+          simDir = (simDir + 1) % 4;
+          const wpos = gridToWorld(simX, simY);
+          const ring = new THREE.Mesh(new THREE.TorusGeometry(0.42, 0.07, 8, 20), createLegoMaterial(0xec4899));
+          ring.rotation.x = Math.PI / 2; ring.position.set(wpos.x, 0.18 + (i * 0.01), wpos.z);
+          pathPreviewGroup.add(ring);
+          continue;
+        } else if (cmd === 'forward') {
+          simX += DIR_DELTAS[simDir].dx;
+          simY += DIR_DELTAS[simDir].dy;
+        } else if (cmd === 'backward') {
+          simX -= DIR_DELTAS[simDir].dx;
+          simY -= DIR_DELTAS[simDir].dy;
+        }
+
+        const isOut = simX < 0 || simX >= lvl.gridSize || simY < 0 || simY >= lvl.gridSize;
+        const isObs = !isOut && lvl.obstacles.some(o => o.x === simX && o.y === simY);
+        if (isOut) break;
+
+        const wpos = gridToWorld(simX, simY);
+        const disc = new THREE.Mesh(
+          new THREE.CylinderGeometry(0.35, 0.38, 0.12, 16),
+          createLegoMaterial(isObs ? 0xef4444 : (cmd === 'backward' ? 0x9333ea : 0x2563eb))
+        );
+        disc.position.set(wpos.x, 0.16 + (i * 0.01), wpos.z);
+        pathPreviewGroup.add(disc);
+
+        if (isObs) break;
+      }
+    }
+
+    /* =========================================================================
+       8. SEVİYE YÜKLEME VE HEDEF PARÇALARI
+       ========================================================================= */
+    function loadLevel(index) {
+      isBuildMode = false;
+      isCityMode = false;
+
+      document.getElementById('codingFooter').classList.remove('hidden');
+      document.getElementById('buildModeFooter').classList.add('hidden');
+      document.getElementById('cityBuildFooter').classList.add('hidden');
+
+      if (buildAssemblyGroup && scene) { scene.remove(buildAssemblyGroup); buildAssemblyGroup = null; }
+      if (cityAssemblyGroup && scene) { scene.remove(cityAssemblyGroup); cityAssemblyGroup = null; }
+
+      if (boardGroup) boardGroup.visible = true;
+      if (baseplateGroup) baseplateGroup.visible = true;
+
+      currentLevelIndex = index;
+      const lvl = LEVELS[currentLevelIndex];
+
+      applyLevelBackgroundTheme(currentLevelIndex);
+
+      playerPos = { ...lvl.startPos };
+      playerDir = lvl.startDir !== undefined ? lvl.startDir : 0;
+      activeLevelBricks = JSON.parse(JSON.stringify(lvl.bricks));
+      collectedBricks = 0;
+      commands = [];
+
+      // Arayüzü Güncelle (Sembol Odaklı)
+      document.getElementById('levelBadgeText').innerText = `${lvl.id} / ${LEVELS.length}`;
+      document.getElementById('levelTargetIcon').innerText = lvl.partIcon;
+      document.getElementById('brickCounter').innerText = `0 / ${lvl.bricks.length}`;
+      document.getElementById('starTargetHint').innerText = `⭐ Hedef: ${lvl.optimalSteps} Adım`;
+      document.getElementById('taskVisualHint').innerHTML = `
+        <span>Önce</span> <span class="bg-blue-500/80 px-1.5 py-0.5 rounded text-white text-xs">${lvl.partIcon}</span> <span>Topla</span> ➔ <span>Sonra</span> <span class="bg-yellow-400 text-slate-900 px-1.5 py-0.5 rounded text-xs">🏁</span> <span>Ulaş!</span>
+      `;
+
+      clearErrorHighlights();
+      updateCommandTray();
+
+      buildLevelBoard();
+      spawnObstacles();
+      spawnGoal();
+      spawnItems();
+      spawnPlayer();
+    }
+
+    function spawnPlayer() {
+      if (!characterGroup) return;
+      if (characterMesh) characterGroup.remove(characterMesh);
+      characterMesh = createMinifigureMesh(selectedHeroKey);
+      const wpos = gridToWorld(playerPos.x, playerPos.y);
+      characterMesh.position.set(wpos.x, 0.1, wpos.z);
+      characterMesh.rotation.y = DIR_DELTAS[playerDir].rotY;
+      characterGroup.add(characterMesh);
+    }
+
+    function spawnObstacles() {
+      if (!obstaclesGroup) return;
+      while (obstaclesGroup.children.length > 0) obstaclesGroup.remove(obstaclesGroup.children[0]);
+      const lvl = LEVELS[currentLevelIndex];
+      lvl.obstacles.forEach(obs => {
+        const barrier = create3DObstacleBarrier();
+        const wpos = gridToWorld(obs.x, obs.y);
+        barrier.position.set(wpos.x, 0.08, wpos.z);
+        obstaclesGroup.add(barrier);
+      });
+    }
+
+    function spawnGoal() {
+      if (!goalGroup) return;
+      while (goalGroup.children.length > 0) goalGroup.remove(goalGroup.children[0]);
+      const lvl = LEVELS[currentLevelIndex];
+      const goal = new THREE.Group();
+      
+      const pad = new THREE.Mesh(new THREE.BoxGeometry(1.6, 0.18, 1.6), createLegoMaterial(0xfacc15));
+      goal.add(pad);
+
+      // Finish Bayrağı Canvas
+      const c = document.createElement('canvas'); c.width = 128; c.height = 128;
+      const ctx = c.getContext('2d');
+      ctx.fillStyle = '#0f172a'; ctx.fillRect(0,0,128,128);
+      ctx.fillStyle = '#ffffff';
+      for(let i=0; i<4; i++){ for(let j=0; j<4; j++){ if((i+j)%2===0) ctx.fillRect(i*32, j*32, 32, 32); } }
+      
+      const flagSprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: new THREE.CanvasTexture(c) }));
+      flagSprite.scale.set(1.1, 1.1, 1.0); flagSprite.position.set(0, 0.9, 0);
+      goal.add(flagSprite);
+
+      const wpos = gridToWorld(lvl.goal.x, lvl.goal.y);
+      goal.position.set(wpos.x, 0.08, wpos.z);
+      goalGroup.add(goal);
+    }
+
+    function spawnItems() {
+      if (!itemsGroup) return;
+      while (itemsGroup.children.length > 0) itemsGroup.remove(itemsGroup.children[0]);
+      const lvl = LEVELS[currentLevelIndex];
+
+      activeLevelBricks.forEach(b => {
+        if (b.collected) return;
+        const itemGroup = new THREE.Group();
+        // Parlayan Altın Halka Tabanı
+        const ring = new THREE.Mesh(new THREE.CylinderGeometry(0.7, 0.75, 0.1, 18), createLegoMaterial(0xfacc15));
+        itemGroup.add(ring);
+
+        // 3D Lego Bloğu
+        const brick = new THREE.Mesh(new THREE.BoxGeometry(0.8, 0.8, 0.8), createLegoMaterial(0x22c55e));
+        brick.position.y = 0.45;
+        itemGroup.add(brick);
+
+        const wpos = gridToWorld(b.x, b.y);
+        itemGroup.position.set(wpos.x, 0.2, wpos.z);
+        itemGroup.userData = { brickRef: b, initialY: 0.2, timeOffset: Math.random() * Math.PI * 2 };
+        itemsGroup.add(itemGroup);
+      });
+    }
+
+    /* =========================================================================
+       9. KOMUT SİSTEMİ (İLERİ, SOLA/SAĞA DÖN, GERİ) VE ÇALIŞTIRMA
+       ========================================================================= */
+    function clearErrorHighlights() {
+      document.querySelectorAll('.error-step').forEach(el => el.classList.remove('error-step'));
+      document.querySelectorAll('.active-executing').forEach(el => el.classList.remove('active-executing'));
+    }
+
+    function markStepError(cmdBox) {
+      if (!cmdBox) return;
+      cmdBox.classList.remove('active-executing');
+      cmdBox.classList.add('error-step');
+      cmdBox.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' });
+    }
+
+    function addCommand(cmdType) {
+      if (isExecuting || isBuildMode || isCityMode) return;
+      if (commands.length >= 14) {
+        showToast("Maksimum 14 adım!", "⚠️");
+        return;
+      }
+      playSound('click');
+      clearErrorHighlights();
+      commands.push(cmdType);
+      updateCommandTray();
+    }
+
+    function resetCurrentLevelPosition() {
+      if (isExecuting || isBuildMode || isCityMode) return;
+      playSound('click');
+      clearErrorHighlights();
+      const lvl = LEVELS[currentLevelIndex];
+      playerPos = { ...lvl.startPos };
+      playerDir = lvl.startDir !== undefined ? lvl.startDir : 0;
+      activeLevelBricks = JSON.parse(JSON.stringify(lvl.bricks));
+      collectedBricks = 0;
+      document.getElementById('brickCounter').innerText = `0 / ${lvl.bricks.length}`;
+      spawnItems();
+      const wpos = gridToWorld(playerPos.x, playerPos.y);
+      if (characterMesh) {
+        characterMesh.position.set(wpos.x, 0.1, wpos.z);
+        characterMesh.rotation.y = DIR_DELTAS[playerDir].rotY;
+      }
+      renderPathPreviewOnBoard();
+    }
+
+    function clearCommands() {
+      if (isExecuting || isBuildMode || isCityMode) return;
+      commands = [];
+      updateCommandTray();
+      resetCurrentLevelPosition();
+    }
+
+    function removeCommandAt(index) {
+      if (isExecuting || isBuildMode || isCityMode) return;
+      playSound('click');
+      clearErrorHighlights();
+      commands.splice(index, 1);
+      updateCommandTray();
+    }
+
+    function updateCommandTray() {
+      const tray = document.getElementById('commandTray');
+      document.getElementById('stepCountBadge').innerText = commands.length;
+      tray.innerHTML = '';
+
+      if (commands.length === 0) {
+        tray.innerHTML = `
+          <span id="emptyTrayText" class="text-xs text-slate-500 font-bold mx-auto flex items-center gap-1 text-center">
+            👇 <b>⬆️ İLERİ</b> ile yürüt, <b>↩️ ↪️ DÖNÜŞ</b> ile yönünü çevir!
+          </span>
+        `;
+        renderPathPreviewOnBoard();
+        return;
+      }
+
+      const cmdStyles = {
+        forward:   { icon: '⬆️', label: 'İLERİ',     classes: 'bg-blue-600 text-white border-blue-800' },
+        backward:  { icon: '⬇️', label: 'GERİ',      classes: 'bg-purple-600 text-white border-purple-800' },
+        turnLeft:  { icon: '↩️', label: 'SOLA DÖN',  classes: 'bg-orange-500 text-white border-orange-700' },
+        turnRight: { icon: '↪️', label: 'SAĞA DÖN',  classes: 'bg-pink-500 text-white border-pink-700' }
+      };
+
+      commands.forEach((cmd, idx) => {
+        const st = cmdStyles[cmd] || cmdStyles.forward;
+        const item = document.createElement('div');
+        item.id = `cmd-${idx}`;
+        item.className = `step-card flex-shrink-0 w-[58px] h-[64px] rounded-2xl shadow-md border-b-4 flex flex-col items-center justify-between p-1 relative cursor-pointer select-none ${st.classes}`;
+
+        item.innerHTML = `
+          <button type="button" onclick="event.stopPropagation(); removeCommandAt(${idx})" class="absolute -top-1.5 -right-1.5 bg-rose-600 hover:bg-rose-700 text-white rounded-full w-4 h-4 text-[9px] flex items-center justify-center font-black shadow border border-white">✕</button>
+          <div class="flex flex-col items-center leading-none mt-1 pointer-events-none">
+            <span class="text-xl leading-none">${st.icon}</span>
+            <span class="text-[9px] font-black uppercase tracking-tighter mt-1 text-white">${st.label}</span>
+          </div>
+          <span class="text-[9px] font-black opacity-80">${idx + 1}</span>
+        `;
+        tray.appendChild(item);
+      });
+
+      renderPathPreviewOnBoard();
+    }
+
+    async function runAlgorithm() {
+      if (isExecuting || isBuildMode || isCityMode) return;
+      if (commands.length === 0) {
+        showToast("Önce kod butonlarına bas!", "🧭");
+        return;
+      }
+
+      initAudio();
+      isExecuting = true;
+      clearErrorHighlights();
+
+      const runBtn = document.getElementById('runButton');
+      runBtn.classList.add('opacity-50', 'cursor-not-allowed');
+
+      const lvl = LEVELS[currentLevelIndex];
+      playerPos = { ...lvl.startPos };
+      playerDir = lvl.startDir !== undefined ? lvl.startDir : 0;
+      activeLevelBricks = JSON.parse(JSON.stringify(lvl.bricks));
+      collectedBricks = 0;
+      document.getElementById('brickCounter').innerText = `0 / ${lvl.bricks.length}`;
+      spawnItems();
+
+      const startWorld = gridToWorld(playerPos.x, playerPos.y);
+      characterMesh.position.set(startWorld.x, 0.1, startWorld.z);
+      characterMesh.rotation.y = DIR_DELTAS[playerDir].rotY;
+
+      await sleep(250);
+      let hitObstacle = false;
+
+      for (let i = 0; i < commands.length; i++) {
+        const cmdBox = document.getElementById(`cmd-${i}`);
+        if (cmdBox) cmdBox.classList.add('active-executing');
+
+        const cmd = commands[i];
+
+        if (cmd === 'turnLeft') {
+          playerDir = (playerDir + 3) % 4;
+          await animateTurnInPlace(DIR_DELTAS[playerDir].rotY);
+          await sleep(80);
+          if (cmdBox) cmdBox.classList.remove('active-executing');
+          continue;
+        } else if (cmd === 'turnRight') {
+          playerDir = (playerDir + 1) % 4;
+          await animateTurnInPlace(DIR_DELTAS[playerDir].rotY);
+          await sleep(80);
+          if (cmdBox) cmdBox.classList.remove('active-executing');
+          continue;
+        }
+
+        const stepSign = cmd === 'backward' ? -1 : 1;
+        const nextX = playerPos.x + DIR_DELTAS[playerDir].dx * stepSign;
+        const nextY = playerPos.y + DIR_DELTAS[playerDir].dy * stepSign;
+
+        if (nextX < 0 || nextX >= lvl.gridSize || nextY < 0 || nextY >= lvl.gridSize) {
+          playSound('bump');
+          markStepError(cmdBox);
+          showToast("Alanın dışına çıktın! Yönünü çevir.", "💥");
+          hitObstacle = true;
+          break;
+        }
+
+        const isObs = lvl.obstacles.some(o => o.x === nextX && o.y === nextY);
+        if (isObs) {
+          playSound('bump');
+          markStepError(cmdBox);
+          showToast("Kırmızı Trafik Konisi Var! Geçilemez.", "🚨");
+          hitObstacle = true;
+          break;
+        }
+
+        playerPos.x = nextX;
+        playerPos.y = nextY;
+        const targetWorld = gridToWorld(playerPos.x, playerPos.y);
+
+        await animateWalkStep(targetWorld);
+
+        const brickIndex = activeLevelBricks.findIndex(b => b.x === playerPos.x && b.y === playerPos.y && !b.collected);
+        if (brickIndex !== -1) {
+          activeLevelBricks[brickIndex].collected = true;
+          collectedBricks++;
+          playSound('brick');
+          document.getElementById('brickCounter').innerText = `${collectedBricks} / ${lvl.bricks.length}`;
+          // Parçayı kaldır
+          if (itemsGroup.children[brickIndex]) itemsGroup.children[brickIndex].visible = false;
+        }
+
+        await sleep(90);
+        if (cmdBox) cmdBox.classList.remove('active-executing');
+      }
+
+      isExecuting = false;
+      runBtn.classList.remove('opacity-50', 'cursor-not-allowed');
+
+      if (!hitObstacle) {
+        checkLevelCompletion();
+      }
+    }
+
+    function animateTurnInPlace(targetRot) {
+      return new Promise(resolve => {
+        playSound('turn');
+        const startRot = characterMesh.rotation.y;
+        const duration = 250;
+        const startTime = performance.now();
+        let deltaRot = (targetRot - startRot) % (Math.PI * 2);
+        if (deltaRot > Math.PI) deltaRot -= Math.PI * 2;
+        if (deltaRot < -Math.PI) deltaRot += Math.PI * 2;
+
+        function step(now) {
+          const t = Math.min((now - startTime) / duration, 1);
+          characterMesh.rotation.y = startRot + deltaRot * t;
+          if (t < 1) requestAnimationFrame(step);
+          else { characterMesh.rotation.y = targetRot; resolve(); }
+        }
+        requestAnimationFrame(step);
+      });
+    }
+
+    function animateWalkStep(targetPos) {
+      return new Promise(resolve => {
+        playSound('step');
+        const startX = characterMesh.position.x;
+        const startZ = characterMesh.position.z;
+        const duration = 280;
+        const startTime = performance.now();
+
+        function step(now) {
+          const t = Math.min((now - startTime) / duration, 1);
+          characterMesh.position.x = startX + (targetPos.x - startX) * t;
+          characterMesh.position.z = startZ + (targetPos.z - startZ) * t;
+          characterMesh.position.y = 0.1 + Math.sin(t * Math.PI) * 0.22;
+          if (t < 1) requestAnimationFrame(step);
+          else { characterMesh.position.y = 0.1; resolve(); }
+        }
+        requestAnimationFrame(step);
+      });
+    }
+
+    function checkLevelCompletion() {
+      const lvl = LEVELS[currentLevelIndex];
+      const allBricksCollected = collectedBricks === lvl.bricks.length;
+      const reachedGoal = playerPos.x === lvl.goal.x && playerPos.y === lvl.goal.y;
+
+      if (reachedGoal && allBricksCollected) {
+        playSound('win');
+        triggerConfetti();
+        completedLevels[currentLevelIndex] = true;
+        levelStars[currentLevelIndex] = 3;
+        saveProgress();
+
+        const modal = document.getElementById('celebrationModal');
+        document.getElementById('modalSvgPiece').innerText = lvl.partIcon;
+        document.getElementById('modalActionBtn').onclick = () => {
+          modal.classList.add('hidden');
+          if (currentLevelIndex < LEVELS.length - 1) loadLevel(currentLevelIndex + 1);
+        };
+        modal.classList.remove('hidden');
+      } else if (reachedGoal && !allBricksCollected) {
+        showToast("Finish'e ulaştın ama Lego parçasını almadın!", "🧱");
+      } else {
+        showToast("Tüm parçaları toplayıp Finish'e git!", "🏁");
+      }
+    }
+
+    /* =========================================================================
+       10. GERÇEKÇİ ÖĞRENCİ MİNİFİGÜR SVG KARTLARI (GÖRSELDEKİ BİLFEN KIYAFETİ)
+       ========================================================================= */
+    function generateStudentAvatarSVG(heroKey, size = 110) {
+      if (heroKey === 'girl') {
+        return `
+          <svg width="${size}" height="${size}" viewBox="0 0 120 140">
+            <!-- Saç & İki Yanda At Kuyruğu (Görseldeki gibi) -->
+            <ellipse cx="26" cy="42" rx="12" ry="16" fill="#652810" stroke="#381404" stroke-width="2" />
+            <ellipse cx="94" cy="42" rx="12" ry="16" fill="#652810" stroke="#381404" stroke-width="2" />
+            <!-- Mavi Tokalar -->
+            <rect x="22" y="27" width="11" height="7" rx="3" fill="#2563eb" />
+            <rect x="87" y="27" width="11" height="7" rx="3" fill="#2563eb" />
+
+            <!-- Lego Kafa -->
+            <rect x="49" y="8" width="22" height="7" rx="3" fill="#facc15" stroke="#b45309" stroke-width="1.8" />
+            <rect x="36" y="14" width="48" height="38" rx="10" fill="#facc15" stroke="#b45309" stroke-width="2" />
+            <path d="M 34 26 Q 60 7 86 26 Z" fill="#652810" />
+
+            <!-- Gözler & Gülen Yüz -->
+            <circle cx="49" cy="32" r="4" fill="#0f172a" />
+            <circle cx="71" cy="32" r="4" fill="#0f172a" />
+            <circle cx="47.5" cy="30.5" r="1.4" fill="#ffffff" />
+            <circle cx="69.5" cy="30.5" r="1.4" fill="#ffffff" />
+            <path d="M 49 40 Q 60 48 71 40" stroke="#0f172a" stroke-width="3.2" fill="none" stroke-linecap="round" />
+
+            <!-- LACİVERT-BORDO ÇİZGİLİ BİLFEN KAZAĞI -->
+            <polygon points="35,56 85,56 91,98 29,98" fill="#0f2547" stroke="#061224" stroke-width="2" />
+            <!-- Bordo Çizgiler -->
+            <polygon points="33,68 87,68 89,80 31,80" fill="#75142b" />
+            <polygon points="30,86 90,86 91,94 29,94" fill="#75142b" />
+            <!-- Beyaz Polo Yaka -->
+            <polygon points="46,56 74,56 60,70" fill="#ffffff" stroke="#cbd5e1" stroke-width="1.5" />
+
+            <!-- Kollar -->
+            <path d="M 33 58 L 19 86 L 29 90 L 38 64 Z" fill="#0f2547" />
+            <path d="M 87 58 L 101 86 L 91 90 L 82 64 Z" fill="#0f2547" />
+            <!-- Sarı Lego Elleri -->
+            <path d="M 17 94 A 7 7 0 1 1 28 95" fill="none" stroke="#facc15" stroke-width="5" stroke-linecap="round" />
+            <path d="M 92 95 A 7 7 0 1 1 103 94" fill="none" stroke="#facc15" stroke-width="5" stroke-linecap="round" />
+
+            <!-- Lacivert Etek & Bacaklar -->
+            <polygon points="28,98 92,98 96,116 24,116" fill="#1e3050" stroke="#0f172a" stroke-width="2" />
+            <rect x="36" y="116" width="18" height="18" fill="#facc15" />
+            <rect x="66" y="116" width="18" height="18" fill="#facc15" />
+            <rect x="34" y="128" width="22" height="10" rx="3" fill="#1e3050" />
+            <rect x="64" y="128" width="22" height="10" rx="3" fill="#1e3050" />
+          </svg>
+        `;
+      } else {
+        return `
+          <svg width="${size}" height="${size}" viewBox="0 0 120 140">
+            <!-- Dalgalı Erkek Saçı (Görseldeki gibi) -->
+            <rect x="49" y="8" width="22" height="7" rx="3" fill="#facc15" stroke="#b45309" stroke-width="1.8" />
+            <rect x="36" y="14" width="48" height="38" rx="10" fill="#facc15" stroke="#b45309" stroke-width="2" />
+            <path d="M 33 24 Q 60 5 87 24 Q 75 14 58 16 Q 42 12 33 24 Z" fill="#8a451d" />
+
+            <!-- Gözler & Gülen Yüz -->
+            <circle cx="49" cy="32" r="4" fill="#0f172a" />
+            <circle cx="71" cy="32" r="4" fill="#0f172a" />
+            <circle cx="47.5" cy="30.5" r="1.4" fill="#ffffff" />
+            <circle cx="69.5" cy="30.5" r="1.4" fill="#ffffff" />
+            <path d="M 48 40 Q 60 48 72 40" stroke="#0f172a" stroke-width="3.2" fill="none" stroke-linecap="round" />
+
+            <!-- LACİVERT-BORDO ÇİZGİLİ BİLFEN KAZAĞI -->
+            <polygon points="35,56 85,56 91,98 29,98" fill="#0f2547" stroke="#061224" stroke-width="2" />
+            <polygon points="33,68 87,68 89,80 31,80" fill="#75142b" />
+            <polygon points="30,86 90,86 91,94 29,94" fill="#75142b" />
+            <!-- Beyaz Polo Yaka -->
+            <polygon points="46,56 74,56 60,70" fill="#ffffff" stroke="#cbd5e1" stroke-width="1.5" />
+
+            <!-- Kollar -->
+            <path d="M 33 58 L 19 86 L 29 90 L 38 64 Z" fill="#0f2547" />
+            <path d="M 87 58 L 101 86 L 91 90 L 82 64 Z" fill="#0f2547" />
+            <path d="M 17 94 A 7 7 0 1 1 28 95" fill="none" stroke="#facc15" stroke-width="5" stroke-linecap="round" />
+            <path d="M 92 95 A 7 7 0 1 1 103 94" fill="none" stroke="#facc15" stroke-width="5" stroke-linecap="round" />
+
+            <!-- Lacivert Pantolon & Ayaklar -->
+            <rect x="30" y="98" width="60" height="9" fill="#0f172a" />
+            <rect x="31" y="107" width="27" height="27" rx="3" fill="#1e3050" stroke="#0f172a" stroke-width="2" />
+            <rect x="62" y="107" width="27" height="27" rx="3" fill="#1e3050" stroke="#0f172a" stroke-width="2" />
+            <rect x="29" y="128" width="29" height="10" rx="3" fill="#0f172a" />
+            <rect x="62" y="128" width="29" height="10" rx="3" fill="#0f172a" />
+          </svg>
+        `;
+      }
+    }
+
+    function selectHero(heroKey) {
+      playSound('click');
+      selectedHeroKey = heroKey;
+      saveProgress();
+
+      const girlBtn = document.getElementById('heroBtn-girl');
+      const boyBtn = document.getElementById('heroBtn-boy');
+      const girlBadge = document.getElementById('heroSelectedBadge-girl');
+      const boyBadge = document.getElementById('heroSelectedBadge-boy');
+
+      if (heroKey === 'girl') {
+        girlBtn.classList.add('border-pink-500'); girlBtn.classList.remove('border-slate-200');
+        boyBtn.classList.remove('border-blue-600'); boyBtn.classList.add('border-slate-200');
+        girlBadge.classList.remove('hidden'); boyBadge.classList.add('hidden');
+      } else {
+        boyBtn.classList.add('border-blue-600'); boyBtn.classList.remove('border-slate-200');
+        girlBtn.classList.remove('border-pink-500'); girlBtn.classList.add('border-slate-200');
+        boyBadge.classList.remove('hidden'); girlBadge.classList.add('hidden');
+      }
+
+      document.getElementById('headerAvatar').innerHTML = generateStudentAvatarSVG(heroKey, 38);
+      spawnPlayer();
+    }
+
+    function openStartScreen() {
+      playSound('click');
+      updateProgressCountersUI();
+      document.getElementById('startScreen').classList.remove('hidden');
+    }
+
+    function startScreenToLevelSelect() {
+      playSound('click');
+      document.getElementById('startScreen').classList.add('hidden');
+      openLevelSelectModal();
+    }
+
+    function startGame() {
+      playSound('win');
+      document.getElementById('startScreen').classList.add('hidden');
+      loadLevel(0);
+    }
+
+    function openLevelSelectModal() {
+      playSound('click');
+      const holder = document.getElementById('levelSelectListHolder');
+      holder.innerHTML = '';
+
+      WORLDS.forEach((world, wIdx) => {
+        const box = document.createElement('div');
+        box.className = 'bg-white rounded-2xl p-2.5 border-2 border-slate-200 shadow-sm';
+        box.innerHTML = `
+          <div class="text-xs font-black text-slate-800 mb-1.5 flex items-center gap-1">${world.icon} ${world.title}</div>
+          <div class="grid grid-cols-5 gap-1.5" id="wgrid-${wIdx}"></div>
+        `;
+        holder.appendChild(box);
+
+        const g = box.querySelector(`#wgrid-${wIdx}`);
+        for (let i = 0; i < 5; i++) {
+          const lIdx = wIdx * 5 + i;
+          const lvl = LEVELS[lIdx];
+          const isDone = completedLevels[lIdx];
+          const btn = document.createElement('button');
+          btn.className = `p-1.5 rounded-xl border-2 flex flex-col items-center justify-center ${lIdx === currentLevelIndex ? 'bg-yellow-300 border-yellow-500 font-black' : isDone ? 'bg-emerald-100 border-emerald-400 font-bold' : 'bg-slate-50 border-slate-200'}`;
+          btn.innerHTML = `<span>${lvl.partIcon}</span><span class="text-[10px]">${lvl.id}</span>`;
+          btn.onclick = () => {
+            document.getElementById('levelSelectModal').classList.add('hidden');
+            loadLevel(lIdx);
+          };
+          g.appendChild(btn);
+        }
+      });
+      document.getElementById('levelSelectModal').classList.remove('hidden');
+    }
+
+    function closeLevelSelectModal() {
+      document.getElementById('levelSelectModal').classList.add('hidden');
+    }
+
+    function showToast(text, icon = '⚠️') {
+      const toast = document.getElementById('toastMessage');
+      document.getElementById('toastText').innerText = text;
+      document.getElementById('toastIcon').innerText = icon;
+      toast.classList.remove('-translate-y-28');
+      toast.classList.add('translate-y-4');
+      setTimeout(() => {
+        toast.classList.remove('translate-y-4');
+        toast.classList.add('-translate-y-28');
+      }, 2600);
+    }
+
+    function triggerConfetti() {
+      if (typeof confetti === 'function') confetti({ particleCount: 70, spread: 80, origin: { y: 0.6 } });
+    }
+
+    function sleep(ms) { return new Promise(resolve => setTimeout(resolve, ms)); }
+
+    function animate(time) {
+      requestAnimationFrame(animate);
+      const sec = (time || 0) * 0.001;
+      if (isCameraMoving && camera && controls && targetCameraPos && targetCameraLook) {
+        camera.position.lerp(targetCameraPos, 0.08);
+        controls.target.lerp(targetCameraLook, 0.08);
+        if (camera.position.distanceTo(targetCameraPos) < 0.08) isCameraMoving = false;
+      }
+      if (controls) controls.update();
+
+      if (itemsGroup) {
+        itemsGroup.children.forEach(item => {
+          if (item.userData && item.userData.initialY) {
+            item.rotation.y = sec * 2.0 + item.userData.timeOffset;
+            item.position.y = item.userData.initialY + Math.sin(sec * 3.2 + item.userData.timeOffset) * 0.1;
+          }
+        });
+      }
+      if (renderer && scene && camera) renderer.render(scene, camera);
+    }
+
+    window.onload = function() {
+      document.getElementById('heroPreview-girl').innerHTML = generateStudentAvatarSVG('girl', 110);
+      document.getElementById('heroPreview-boy').innerHTML = generateStudentAvatarSVG('boy', 110);
+      loadSavedProgress();
+      init3DScene();
+      selectHero(selectedHeroKey);
+      loadLevel(0);
+    };
+  </script>
+</body>
+</html>
